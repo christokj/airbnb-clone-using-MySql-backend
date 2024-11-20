@@ -1,0 +1,53 @@
+# Node.js dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS-specific files
+.DS_Store    # macOS
+Thumbs.db    # Windows
+desktop.ini  # Windows
+*.swp        # vi/vim swap files
+.idea/       # JetBrains IDEs
+.vscode/     # VSCode settings
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+*.swo
+*.log
+
+# Compiled files
+*.class
+*.pyc
+*.o
+*.out
+*.so
+*.dll
+*.exe
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Dependency directories
+bower_components/
