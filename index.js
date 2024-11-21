@@ -26,6 +26,7 @@ const db = mysql.createPool({
 
 app.use(express.json());
 app.use(cookieParser());
+
 app.use('/uploads', express.static(__dirname + '/uploads'));
 app.use(cors({
   credentials: true,
@@ -57,10 +58,17 @@ async function uploadToS3(path, originalFilename, mimetype) {
 // Helper function to extract user data from the request
 function getUserDataFromReq(req) {
   return new Promise((resolve, reject) => {
-    jwt.verify(req.cookies.token, {}, (err, userData) => {
-      if (err) reject(err);
-      resolve(userData);
-    });
+      const token = req.cookies.token; // Ensure token is coming from cookies
+      if (!token) {
+          return reject(new Error('Token not provided'));
+      }
+
+      jwt.verify(token, process.env.JWT_SECRET, {}, (err, userData) => {
+          if (err) {
+              return reject(new Error(`JWT Verification Failed: ${err.message}`));
+          }
+          resolve(userData);
+      });
   });
 }
 
@@ -261,17 +269,27 @@ app.post('/places', async (req, res) => {
 app.get('/user-places', async (req, res) => {
   const { token } = req.cookies;
 
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
   try {
+    // Extract user data from the token
     const userData = await getUserDataFromReq(req);
-    const sql = 'SELECT * FROM places WHERE owner_id = ?';
-    db.query(sql, [userData.id], (err, results) => {
-      if (err) return res.status(500).json(err);
-      res.json(results);
-    });
+    console.log(userData)
+
+    // Query to fetch places where the userEmail matches the user's id
+    const sql = 'SELECT * FROM places WHERE userEmail = ?';
+    const [results] = await db.query(sql, [userData.email]);
+
+    // Send the results as JSON
+    res.status(200).json(results);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('Error fetching user-specific places:', err.message);
+    res.status(500).json({ error: 'Failed to fetch user-specific places' });
   }
 });
+
 
 app.get('/places/:title', async (req, res) => {
   const { title } = req.params;
@@ -289,27 +307,29 @@ app.get('/places/:title', async (req, res) => {
 app.put('/places', async (req, res) => {
   const { token } = req.cookies;
   const {
-      id, title, address, addedPhotos, description,
+       id, title, address, addedPhotos, description,
       perks, extraInfo, checkIn, checkOut, maxGuests, price,
   } = req.body;
 
-  jwt.verify(token, {}, async (err, userData) => {
+  jwt.verify(token, process.env.JWT_SECRET, {}, async (err, userData) => {
       if (err) return res.status(403).json({ error: 'Unauthorized' });
 
       try {
-          const [placeRows] = await db.query('SELECT * FROM places WHERE id = ?', [id]);
+          const [placeRows] = await db.query('SELECT * FROM places WHERE title = ?', [id]);
           if (placeRows.length === 0) {
               return res.status(404).json({ error: 'Place not found' });
           }
           const place = placeRows[0];
 
-          if (userData.id !== place.owner.toString()) {
+          if (userData.email !== place.userEmail.toString()) {
               return res.status(403).json({ error: 'Not authorized to edit this place' });
           }
+          const userEmail = place.userEmail
+          console.log(userEmail)
 
-          await pool.query(
-              `UPDATE places SET title = ?, address = ?, photos = ?, description = ?, perks = ?, extraInfo = ?, checkIn = ?, checkOut = ?, maxGuests = ?, price = ? WHERE id = ?`,
-              [title, address, JSON.stringify(addedPhotos), description, perks, extraInfo, checkIn, checkOut, maxGuests, price, id]
+          await db.query(
+              `UPDATE places SET title = ?, address = ?, photos = ?, description = ?, perks = ?, extra_info = ?, check_in = ?, check_out = ?, max_guests = ?, price = ? WHERE userEmail = ?`,
+              [title, address, JSON.stringify(addedPhotos), description, JSON.stringify(perks), extraInfo, checkIn, checkOut, maxGuests, price, userEmail]
           );
           res.json('ok');
       } catch (err) {
@@ -319,44 +339,59 @@ app.put('/places', async (req, res) => {
 });
 
 app.get('/places', async (req, res) => {
+  const { title } = req.query; // Retrieve the title from the query parameters
+
   try {
-      const [rows] = await db.query('SELECT * FROM places');
-      res.json(rows);
+    let rows;
+    if (title) {
+      // Fetch places where the title matches the given title
+      const [results] = await db.query('SELECT * FROM places WHERE title = ?', [title]);
+      rows = results;
+    } else {
+      // If no title is provided, fetch all places
+      const [results] = await db.query('SELECT * FROM places');
+      rows = results;
+    }
+
+    res.status(200).json(rows);
   } catch (err) {
-      res.status(500).json({ error: err.message });
+    console.error('Error fetching places:', err.message);
+    res.status(500).json({ error: 'Failed to fetch places' });
   }
 });
 
-app.post('/bookings', async (req, res) => {
-  const userData = await getUserDataFromReq(req);
-  const { place, checkIn, checkOut, numberOfGuests, name, phone, price } = req.body;
-
-  try {
-      const [result] = await db.query(
-          `INSERT INTO bookings (place, checkIn, checkOut, numberOfGuests, name, phone, price, user) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [place, checkIn, checkOut, numberOfGuests, name, phone, price, userData.id]
-      );
-      res.json({ id: result.insertId });
-  } catch (err) {
-      res.status(500).json({ error: err.message });
-  }
-});
 
 app.get('/bookings', async (req, res) => {
-  const userData = await getUserDataFromReq(req);
-
   try {
-      const [rows] = await db.query(
-          `SELECT bookings.*, places.* FROM bookings 
-           INNER JOIN places ON bookings.place = places.id 
-           WHERE bookings.user = ?`,
-          [userData.id]
+    // Fetch all bookings from the bookings table
+    const [rows] = await db.query('SELECT * FROM bookings');
+
+    // Send the fetched rows as a JSON response
+    res.status(200).json(rows);
+  } catch (err) {
+    console.error('Error fetching bookings:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve bookings' });
+  }
+});
+
+
+
+app.post('/bookings', async (req, res) => {
+  const { check_in, check_out, number_of_guests, name, phone, place, price } = req.body;
+  const userData = await getUserDataFromReq(req); 
+console.log(userData)
+  try {
+      const result = await db.query(
+          `INSERT INTO bookings (check_in, check_out, number_of_guests, name, phone, place, price, user_id) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [check_in, check_out, number_of_guests, name, phone, place, price, userData.email]
       );
-      res.json(rows);
+      res.status(201).json({ message: 'Booking created successfully', bookingId: result[0].insertId });
   } catch (err) {
       res.status(500).json({ error: err.message });
   }
 });
+
 
 // Start the server
 app.listen(4000, () => {
