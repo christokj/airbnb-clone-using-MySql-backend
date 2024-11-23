@@ -1,0 +1,406 @@
+import express from "express";
+// import { addReview, addToCart, checkUser, fetchUserDetails, otpHandler, otpSender, removeFromCart, saveOrders, showCart, showOrders, showReview, updateCartQuantity, updateUserProfile, userCreate, userLogin, userLogout, userProfile } from "../../controllers/userController.js";
+// import asyncHandler from "../../utils/asyncHandler.js";
+// import { authUser } from "../../middlewares/authUser.js";
+// import { searchProducts, showOneProduct, showProducts, showProductsCategory, showProductsByCategory } from "../../controllers/productController.js";
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const imageDownloader = require('image-downloader');
+const multer = require('multer');
+const fs = require('fs');
+require('dotenv').config();
+const {S3Client, PutObjectCommand, } = require('@aws-sdk/client-s3');
+const mime = require('mime-types');
+
+
+const router = express.Router();
+
+const bucket = process.env.BUCKET;
+
+
+const bcryptSalt = bcrypt.genSaltSync(10);
+
+router.use('/uploads', express.static(__dirname + '/uploads'));
+
+async function uploadToS3(path, originalFilename, mimetype) {
+    const client = new S3Client({
+        region: 'us-east-1',
+        credentials: {
+            accessKeyId: process.env.S3_ACCESS_KEY,
+            secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+  
+        }
+    });
+    const parts = originalFilename.split('.');
+    const ext = parts[parts.length - 1];
+    const newFilename = Date.now() + '.' + ext;
+        await client.send(new PutObjectCommand({
+            Bucket: bucket,
+            Body: fs.readFileSync(path),
+            Key: newFilename,
+            ContentType: mimetype,
+            ACL: 'public-read',
+        }));
+        return `https://${bucket}.s3.amazonaws.com/${newFilename}`;
+  }
+
+  function getUserDataFromReq(req) {
+    return new Promise((resolve, reject) => {
+        const token = req.cookies.token; // Ensure token is coming from cookies
+        if (!token) {
+            return reject(new Error('Token not provided'));
+        }
+  
+        jwt.verify(token, process.env.JWT_SECRET, {}, (err, userData) => {
+            if (err) {
+                return reject(new Error(`JWT Verification Failed: ${err.message}`));
+            }
+            resolve(userData);
+        });
+    });
+  }
+
+  router.get('/test', (req, res) => {
+    db.query('SELECT 1 + 1 AS solution', (err, results) => {
+      if (err) return res.status(500).json(err);
+      res.json({ solution: results[0].solution });
+    });
+  });
+  
+  // User Signup
+  router.post('/signUp', async (req, res) => {
+    const { name, email, password } = req.body;
+  
+    // Validate input
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+  
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+  
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+  
+    try {
+      const hashedPassword = await bcrypt.hash(password, bcryptSalt); // Use bcrypt for hashing
+  
+      // Check if the email already exists
+      const checkEmailSql = 'SELECT email FROM users WHERE email = ?';
+      const [results] = await db.execute(checkEmailSql, [email]);
+  
+      if (results.length > 0) {
+        return res.status(409).json({ error: 'Email already in use' });
+      }
+  
+      // Insert the new user
+      const insertSql = 'INSERT INTO users (name, email, password) VALUES (?, ?, ?)';
+      await db.execute(insertSql, [name, email, hashedPassword]);
+  
+      res.status(201).json({ name, email });
+    } catch (err) {
+      console.error('Signup error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+  
+  
+  // User Login
+  router.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+  
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+  
+    try {
+      const sql = 'SELECT * FROM users WHERE email = ?';
+      const [results] = await db.execute(sql, [email]);
+  
+      if (results.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+  
+      const user = results[0];
+  
+      // Compare passwords
+      const isMatch = await bcrypt.compare(password, user.password);
+  
+      if (!isMatch) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+  
+      // Generate JWT token
+      jwt.sign(
+        { id: user.id, email: user.email, name: user.name },
+        process.env.JWT_SECRET,
+        { expiresIn: '1d' }, // Token expires in 1 day
+        (err, token) => {
+          if (err) {
+            console.error('JWT signing error:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+          }
+  
+          // Set secure cookie with the token
+          res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production', // Use secure flag in production
+            sameSite: 'strict',
+          });
+  
+          // Respond with user data (excluding sensitive fields like password)
+          const { password, ...userWithoutPassword } = user;
+          res.json(userWithoutPassword);
+        }
+      );
+    } catch (err) {
+      console.error('Login error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+  
+  
+  
+  // Profile Route
+  router.get('/profile', async (req, res) => {
+    const { token } = req.cookies; // Get the token from cookies
+  
+    // Check if token exists
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' }); // If no token, return 401
+    }
+    try {
+      // Verify JWT token
+      const userData = jwt.verify(token, process.env.JWT_SECRET); // Use sync verify to get userData
+  
+      // Query user by email from the decoded token
+      const [results] = await db.query('SELECT email FROM users WHERE email = ?', [userData.email]);
+  
+      // Handle case where no user is found
+      if (results.length === 0) {
+        return res.status(404).json({ error: 'User not found' }); // If no user is found
+      }
+  
+      // Respond with user data (ensure it's the required fields)
+      res.json({ success: true, data: { email: results[0].email } }); // Respond with success and user email
+    } catch (err) {
+      if (err instanceof jwt.JsonWebTokenError) {
+        return res.status(403).json({ error: 'Invalid or expired token' }); // If token is invalid or expired
+      }
+      return res.status(500).json({ error: 'Server error', details: err.message }); // Handle other errors
+    }
+  });
+  
+  // Logout
+  router.post('/logout', (req, res) => {
+    res.cookie('token', '').json(true);
+  });
+  
+  // Upload photos by link
+  router.post('/upload-by-link', async (req, res) => {
+    const { link } = req.body;
+    const newName = 'photo' + Date.now() + '.jpg';
+    await imageDownloader.image({
+      url: link,
+      dest: '/tmp/' + newName,
+    });
+    const url = await uploadToS3('/tmp/' + newName, newName,  mime.lookup('/tmp/' + newName));
+    res.json(url);
+  });
+  
+  // Upload photos from file
+  const photosMiddleware = multer({ dest: 'uploads/' });
+  router.post('/upload', photosMiddleware.array('photos', 100), async (req, res) => {
+    const uploadedFiles = [];
+    for (let i = 0; i < req.files.length; i++){
+      const {path,originalname, mimetype} = req.files[i];
+      const url = await uploadToS3(path, originalname, mimetype);
+      uploadedFiles.push(url);
+  }
+    res.json(uploadedFiles);
+  });
+  
+  // Add a new place
+  router.post('/places', async (req, res) => {
+    const { token } = req.cookies;
+    const {
+      title, address, addedPhotos, description,
+      perks, extraInfo, checkIn, checkOut, maxGuests, price,
+    } = req.body;
+  
+    try {
+      const userData = await getUserDataFromReq(req);
+      const sql = `
+        INSERT INTO places 
+        (title, address, photos, description, perks, extra_info, check_in, check_out, max_guests, price, userEmail)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      const values = [
+         title, address, JSON.stringify(addedPhotos), description,
+         JSON.stringify(perks), extraInfo, checkIn, checkOut, maxGuests, price, userData.email
+      ];
+      db.query(sql, values, (err, result) => {
+        if (err) return res.status(500).json(err);
+        res.json({ message:"success", result }); //id: result.insertId
+      });
+    } catch (err) {
+      res.status(500).json(err);
+    }
+  });
+  
+  // List user's places
+  router.get('/user-places', async (req, res) => {
+    const { token } = req.cookies;
+  
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+  
+    try {
+      // Extract user data from the token
+      const userData = await getUserDataFromReq(req);
+      console.log(userData)
+  
+      // Query to fetch places where the userEmail matches the user's id
+      const sql = 'SELECT * FROM places WHERE userEmail = ?';
+      const [results] = await db.query(sql, [userData.email]);
+  
+      // Send the results as JSON
+      res.status(200).json(results);
+    } catch (err) {
+      console.error('Error fetching user-specific places:', err.message);
+      res.status(500).json({ error: 'Failed to fetch user-specific places' });
+    }
+  });
+  
+  
+  router.get('/places/:title', async (req, res) => {
+    const { title } = req.params;
+    try {
+        const [rows] = await db.query('SELECT * FROM places WHERE title = ?', [title]);
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Place not found' });
+        }
+        res.json(rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+  });
+  
+  router.put('/places', async (req, res) => {
+    const { token } = req.cookies;
+    const {
+         id, title, address, addedPhotos, description,
+        perks, extraInfo, checkIn, checkOut, maxGuests, price,
+    } = req.body;
+  
+    jwt.verify(token, process.env.JWT_SECRET, {}, async (err, userData) => {
+        if (err) return res.status(403).json({ error: 'Unauthorized' });
+  
+        try {
+            const [placeRows] = await db.query('SELECT * FROM places WHERE title = ?', [id]);
+            if (placeRows.length === 0) {
+                return res.status(404).json({ error: 'Place not found' });
+            }
+            const place = placeRows[0];
+  
+            if (userData.email !== place.userEmail.toString()) {
+                return res.status(403).json({ error: 'Not authorized to edit this place' });
+            }
+            const userEmail = place.userEmail
+            console.log(userEmail)
+  
+            await db.query(
+                `UPDATE places SET title = ?, address = ?, photos = ?, description = ?, perks = ?, extra_info = ?, check_in = ?, check_out = ?, max_guests = ?, price = ? WHERE userEmail = ?`,
+                [title, address, JSON.stringify(addedPhotos), description, JSON.stringify(perks), extraInfo, checkIn, checkOut, maxGuests, price, userEmail]
+            );
+            res.json('ok');
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+  });
+  
+  router.get('/places', async (req, res) => {
+    const { title } = req.query; // Retrieve the title from the query parameters
+  
+    try {
+      let rows;
+      if (title) {
+        // Fetch places where the title matches the given title
+        const [results] = await db.query('SELECT * FROM places WHERE title = ?', [title]);
+        rows = results;
+      } else {
+        // If no title is provided, fetch all places
+        const [results] = await db.query('SELECT * FROM places');
+        rows = results;
+      }
+  
+      res.status(200).json(rows);
+    } catch (err) {
+      console.error('Error fetching places:', err.message);
+      res.status(500).json({ error: 'Failed to fetch places' });
+    }
+  });
+  
+  
+  router.get('/bookings', async (req, res) => {
+    try {
+      // Fetch all bookings from the bookings table
+      const [rows] = await db.query('SELECT * FROM bookings');
+  
+      // Send the fetched rows as a JSON response
+      res.status(200).json(rows);
+    } catch (err) {
+      console.error('Error fetching bookings:', err.message);
+      res.status(500).json({ error: 'Failed to retrieve bookings' });
+    }
+  });
+  
+  
+  
+  router.post('/bookings', async (req, res) => {
+    const { check_in, check_out, number_of_guests, name, phone, place, price } = req.body;
+    const userData = await getUserDataFromReq(req); 
+  console.log(userData)
+    try {
+        const result = await db.query(
+            `INSERT INTO bookings (check_in, check_out, number_of_guests, name, phone, place, price, user_id) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [check_in, check_out, number_of_guests, name, phone, place, price, userData.email]
+        );
+        res.status(201).json({ message: 'Booking created successfully', bookingId: result[0].insertId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+  });
+
+// router.post("/create", asyncHandler(userCreate));
+// router.post("/login", asyncHandler(userLogin));
+// router.get("/logout", asyncHandler(authUser), asyncHandler(userLogout));
+// router.get("/profile/:id", asyncHandler(authUser), asyncHandler(userProfile));
+// router.get("/check-user", asyncHandler(authUser), asyncHandler(checkUser));
+// router.post("/otp-sender", asyncHandler(otpSender));
+// router.post("/otp-handler", asyncHandler(otpHandler));
+// router.get("/fetch-user-data", asyncHandler(authUser), asyncHandler(fetchUserDetails));
+// router.put("/update-user-details", asyncHandler(authUser), asyncHandler(updateUserProfile));
+// router.get("/show-products", asyncHandler(showProducts));
+// router.get("/show-one-product/:id", asyncHandler(showOneProduct));
+// router.get("/products-category", asyncHandler(showProductsCategory));
+// router.get("/products-by-category/:id", asyncHandler(showProductsByCategory));
+// router.get("/search-products/:searchTerm", asyncHandler(searchProducts));
+// router.post("/add-cart", asyncHandler(authUser), asyncHandler(addToCart));
+// router.get("/show-cart", asyncHandler(authUser), asyncHandler(showCart));
+// router.delete("/remove-cart/:productId", asyncHandler(authUser), asyncHandler(removeFromCart));
+// router.post("/add-review", asyncHandler(authUser), asyncHandler(addReview))
+// router.get("/show-review/:id", asyncHandler(authUser), asyncHandler(showReview))
+// router.post("/save-orders", asyncHandler(authUser), asyncHandler(saveOrders))
+// router.get("/show-orders", asyncHandler(authUser), asyncHandler(showOrders))
+// router.put("/update-cart-quantity", asyncHandler(authUser), asyncHandler(updateCartQuantity))
+
+
+export default router;
