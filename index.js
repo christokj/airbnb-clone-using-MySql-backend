@@ -1,15 +1,15 @@
-const express = require('express');
-const cors = require('cors');
-const { default: apiRouter } = require('./routes');
-const cookieParser = require('cookie-parser');
+const express = require("express");
+const cors = require("cors");
+const apiRouter = require("./routes");
+const cookieParser = require("cookie-parser");
 
 const app = express();
 
 const corsOptions = {
-  origin: process.env.CLIENT_DOMAIN,// ""
-  allowedHeaders: ['Content-Type', 'Authorization'],
- credentials: true, // Allow credentials (cookies, etc.)
- optionSuccessStatus: 200, // Success status for older browsers (IE11, etc.)
+  origin: process.env.CLIENT_DOMAIN, // ""
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true, // Allow credentials (cookies, etc.)
+  optionSuccessStatus: 200, // Success status for older browsers (IE11, etc.)
 };
 
 app.use(cors(corsOptions));
@@ -30,7 +30,6 @@ app.all("*", (req, res, next) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
+app.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
 });
- 
