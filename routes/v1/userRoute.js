@@ -163,15 +163,12 @@ router.post("/login", async (req, res) => {
 
 // Profile Route
 router.get("/profile", async (req, res) => {
-  const { token } = await req.cookies; // Get the token from cookies
-
-  // Check if token exists
-  if (!token) {
-    return res.json({ message: "No token provided", success: false }); // If no token, return
-  }
+ 
   try { 
+
+    const userData = await getUserDataFromReq(req);
     // Verify JWT token
-    const userData = jwt.verify(token, process.env.JWT_SECRET); // Use sync verify to get userData
+    // const userData = jwt.verify(token, process.env.JWT_SECRET); // Use sync verify to get userData
 
     // Query user by email from the decoded token
     const [results] = await db.query(
