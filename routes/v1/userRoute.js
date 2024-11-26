@@ -167,9 +167,9 @@ router.get("/profile", async (req, res) => {
 
   // Check if token exists
   if (!token) {
-    return res.json("No token provided"); // If no token, return
+    return res.json({ message: "No token provided", success: false }); // If no token, return
   }
-  try {
+  try { 
     // Verify JWT token
     const userData = jwt.verify(token, process.env.JWT_SECRET); // Use sync verify to get userData
 
@@ -181,18 +181,20 @@ router.get("/profile", async (req, res) => {
 
     // Handle case where no user is found
     if (results.length === 0) {
-      return res.status(404).json({ error: "User not found" }); // If no user is found
+      return res.status(404).json({ error: "User not found", success: false }); // If no user is found
     }
 
     // Respond with user data (ensure it's the required fields)
     res.json({ success: true, data: { email: results[0].email } }); // Respond with success and user email
   } catch (err) {
     if (err instanceof jwt.JsonWebTokenError) {
-      return res.status(403).json({ error: "Invalid or expired token" }); // If token is invalid or expired
+      return res
+        .status(403)
+        .json({ error: "Invalid or expired token", success: false }); // If token is invalid or expired
     }
     return res
       .status(500)
-      .json({ error: "Server error", details: err.message }); // Handle other errors
+      .json({ error: "Server error", details: err.message, success: false }); // Handle other errors
   }
 });
 
