@@ -151,8 +151,8 @@ router.post("/login", async (req, res) => {
         });
 
         // Respond with user data (excluding sensitive fields like password)
-        const { password, ...userWithoutPassword } = user;
-        res.json(userWithoutPassword);
+        // const { password, ...userWithoutPassword } = user;
+        return res.json({success: true});
       }
     );
   } catch (err) {
