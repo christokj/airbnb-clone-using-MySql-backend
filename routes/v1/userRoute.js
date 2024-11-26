@@ -163,7 +163,7 @@ router.post("/login", async (req, res) => {
 
 // Profile Route
 router.get("/profile", async (req, res) => {
-  const { token } = req.cookies; // Get the token from cookies
+  const { token } = await req.cookies; // Get the token from cookies
 
   // Check if token exists
   if (!token) {

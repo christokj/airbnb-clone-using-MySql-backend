@@ -7,7 +7,8 @@ const app = express();
 
 const corsOptions = {
   origin: process.env.CLIENT_DOMAIN,
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization"], 
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true, // Allow credentials (cookies, etc.)
   optionSuccessStatus: 200, // Success status for older browsers (IE11, etc.)
 };
