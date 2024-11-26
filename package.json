@@ -22,11 +22,10 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "build": "echo \"Build script placeholder\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "christo",
   "license": "ISC",
   "description": ""
 }

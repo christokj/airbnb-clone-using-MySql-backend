@@ -167,7 +167,7 @@ router.get("/profile", async (req, res) => {
 
   // Check if token exists
   if (!token) {
-    return res.json("No token provided"); // If no token, return 
+    return res.json("No token provided"); // If no token, return
   }
   try {
     // Verify JWT token
@@ -218,7 +218,7 @@ router.post("/upload-by-link", async (req, res) => {
 });
 
 // Upload photos from file
-const photosMiddleware = multer({ dest: "uploads/" });
+const photosMiddleware = multer({ dest: "/tmp/uploads/" });
 router.post(
   "/upload",
   photosMiddleware.array("photos", 100),
