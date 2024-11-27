@@ -43,6 +43,7 @@ async function uploadToS3(path, originalFilename, mimetype) {
 function getUserDataFromReq(req) {
   return new Promise((resolve, reject) => {
     const token = req.cookies.token; // Ensure token is coming from cookies
+    console.log(token)
     if (!token) {
       return reject(new Error("Token not provided"));
     }
@@ -143,11 +144,14 @@ router.post("/login", async (req, res) => {
           return res.status(500).json({ error: "Internal server error" });
         }
 
-        // Set secure cookie with the token
+        const isProduction = process.env.NODE_ENV === "production";
+        // console.log(isProduction,'====idProduction');
+    
         res.cookie("token", token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production", // Use secure flag in production
-          sameSite: "strict",
+            maxAge: 24 * 60 * 60 * 1000, // 1 day
+            httpOnly: true,
+            secure: isProduction, // Secure only in production
+            sameSite: isProduction ? "None" : "Lax", // 'None' for production, 'Lax' for development
         });
 
         // Respond with user data (excluding sensitive fields like password)
@@ -197,7 +201,14 @@ router.get("/profile", async (req, res) => {
 
 // Logout
 router.post("/logout", (req, res) => {
-  res.cookie("token", "").json(true);
+  const isProduction = process.env.NODE_ENV === "production";
+
+  res.clearCookie("token", {
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      httpOnly: true,
+      secure: isProduction, // Secure only in production
+      sameSite: isProduction ? "None" : "Lax", // 'None' for production, 'Lax' for development
+  });
 });
 
 // Upload photos by link
