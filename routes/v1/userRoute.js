@@ -215,6 +215,7 @@ router.post("/logout", (req, res) => {
 router.post("/upload-by-link", async (req, res) => {
   const { link } = req.body;
   const newName = "photo" + Date.now() + ".jpg";
+  try {
   await imageDownloader.image({
     url: link,
     dest: "/tmp/" + newName,
@@ -225,6 +226,11 @@ router.post("/upload-by-link", async (req, res) => {
     mime.lookup("/tmp/" + newName)
   );
   res.json(url);
+} catch (error) {
+  console.error("Image upload error:", error);
+  res.status(500).json({ error: "Internal server error" });
+    
+}
 });
 
 // Upload photos from file
