@@ -48,7 +48,6 @@ async function uploadToS3(path, originalFilename, mimetype) {
 function getUserDataFromReq(req) {
   return new Promise((resolve, reject) => {
     const token = req.cookies.token; // Ensure token is coming from cookies
-    console.log(token)
     if (!token) {
       return reject(new Error("Token not provided"));
     }
@@ -150,10 +149,9 @@ router.post("/login", async (req, res) => {
         }
 
         const isProduction = process.env.NODE_ENV === "production";
-        // console.log(isProduction,'====idProduction');
     
         res.cookie("token", token, {
-            maxAge: 24 * 60 * 60 * 1000, // 1 day
+            // maxAge: 24 * 60 * 60 * 1000, // 1 day
             httpOnly: true,
             secure: isProduction, // Secure only in production
             sameSite: isProduction ? "None" : "Lax", // 'None' for production, 'Lax' for development
@@ -225,7 +223,6 @@ router.post("/upload-by-link", async (req, res) => {
     url: link,
     dest: "/tmp/" + newName,
   });
-  console.log("first ")
   const url = await uploadToS3(
     "/tmp/" + newName,
     newName,
@@ -327,11 +324,11 @@ router.get("/user-places", async (req, res) => {
   }
 });
 
-router.get("/places/:title", async (req, res) => {
-  const { title } = req.params;
+router.get("/places/:id", async (req, res) => {
+  const { id } = req.params;
   try {
-    const [rows] = await db.query("SELECT * FROM places WHERE title = ?", [
-      title,
+    const [rows] = await db.query("SELECT * FROM places WHERE id = ?", [
+      id,
     ]);
     if (rows.length === 0) {
       return res.status(404).json({ error: "Place not found" });
@@ -375,9 +372,8 @@ router.put("/places", async (req, res) => {
           .status(403)
           .json({ error: "Not authorized to edit this place" });
       }
-
       await db.query(
-        `UPDATE places SET title = ?, address = ?, photos = ?, description = ?, perks = ?, extra_info = ?, check_in = ?, check_out = ?, max_guests = ?, price = ? WHERE user_email = ?`,
+        `UPDATE places SET title = ?, address = ?, photos = ?, description = ?, perks = ?, extra_info = ?, check_in = ?, check_out = ?, max_guests = ?, price = ? WHERE id = ?`,
         [
           title,
           address,
@@ -389,7 +385,7 @@ router.put("/places", async (req, res) => {
           checkOut,
           maxGuests,
           price,
-          place.userEmail,
+          id,
         ]
       );
       res.json("ok");
