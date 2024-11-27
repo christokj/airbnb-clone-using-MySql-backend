@@ -25,9 +25,10 @@ async function uploadToS3(path, originalFilename, mimetype) {
       secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
     },
   });
-  const parts = originalFilename.split(".");
+  const parts = await originalFilename.split(".");
   const ext = parts[parts.length - 1];
   const newFilename = Date.now() + "." + ext;
+  try {
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
@@ -37,6 +38,10 @@ async function uploadToS3(path, originalFilename, mimetype) {
       ACL: "public-read",
     })
   );
+} catch (err) {
+  console.error("S3 Upload Error:", err);
+  throw err;
+}
   return `https://${bucket}.s3.amazonaws.com/${newFilename}`;
 }
 
@@ -220,6 +225,7 @@ router.post("/upload-by-link", async (req, res) => {
     url: link,
     dest: "/tmp/" + newName,
   });
+  console.log("first ")
   const url = await uploadToS3(
     "/tmp/" + newName,
     newName,

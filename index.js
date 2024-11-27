@@ -23,6 +23,7 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(cookieParser());
+// app.use('/uploads', express.static(__dirname+'/uploads'));
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
